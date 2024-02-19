@@ -182,3 +182,172 @@ export MKL_SERVICE_FORCE_INTEL=1
 export MKL_THREADING_LAYER=GNU
 xtuner convert pth_to_hf ./internlm_chat_7b_qlora_oasst1_e3_copy.py ./work_dirs/internlm_chat_7b_qlora_oasst1_e3_copy/epoch_1.pth ./hf
 ```
+
+生成的 hf 路径内容如下：
+
+```
+|-- hf
+|   |-- README.md
+|   |-- adapter_config.json
+|   |-- adapter_model.bin
+|   `-- xtuner_config.py
+```
+
+该文件夹即为平时所理解的 LoRA模型文件。
+
+6. 部署于测试
+
+首先将 huggingface adapter 合并到大语言模型:
+
+```
+xtuner convert merge ./internlm-chat-7b hf merged --max-shard-size 2GB
+# xtuner convert merge \
+#     ${NAME_OR_PATH_TO_LLM} \
+#     ${NAME_OR_PATH_TO_ADAPTER} \
+#     ${SAVE_PATH} \
+#     --max-shard-size 2GB
+```
+
+然后就可以与合并后的模型对话了：
+
+```
+# 加载 Adapter 模型对话（Float 16）
+xtuner chat ./merged --prompt-template internlm_chat
+
+# 4 bit 量化加载
+# xtuner chat ./merged --bits 4 --prompt-template internlm_chat
+```
+
+![](../asset/04_10-合并模型对话.jpg)
+
+### 自定义微调
+
+以 Medication QA 数据集为例，基于 InternLM-chat-7B 模型，将其往医学问答领域对齐。
+
+1. 数据集准备
+
+```
+mkdir ft-medqa && cd ft-medqa
+wget https://github.com/abachaa/Medication_QA_MedInfo2019/blob/master/MedInfo2019-QA-Medications.xlsx -o MedQA2019.xlsx
+```
+
+通过 python 脚本：将 .xlsx 中的 问题 和 回答 两列 提取出来，再放入 .jsonL 文件的每个 conversation 的 input 和 output 中。
+
+>这一步可以使用如下 prompt，利用ChatGPT来完成数据转换的脚本编写：
+
+```
+Write a python file for me. using openpyxl. input file name is MedQA2019.xlsx
+Step1: The input file is .xlsx. Exact the column A and column D in the sheet named "DrugQA" .
+Step2: Put each value in column A into each "input" of each "conversation". Put each value in column D into each "output" of each "conversation".
+Step3: The output file is .jsonL. It looks like:
+[{
+    "conversation":[
+        {
+            "system": "xxx",
+            "input": "xxx",
+            "output": "xxx"
+        }
+    ]
+},
+{
+    "conversation":[
+        {
+            "system": "xxx",
+            "input": "xxx",
+            "output": "xxx"
+        }
+    ]
+}]
+Step4: All "system" value changes to "You are a professional, highly experienced doctor professor. You always provide accurate, comprehensive, and detailed answers based on the patients' questions."
+```
+
+安装 `openpyxl` 库：
+
+```
+pip install openpyxl
+``` 
+
+执行 `xlsx2jsonl.py` 完成数据转换。
+
+
+然后还是利用 ChatGPT 来划分训练集和测试集：
+
+```
+my .jsonL file looks like:
+[{
+    "conversation":[
+        {
+            "system": "xxx",
+            "input": "xxx",
+            "output": "xxx"
+        }
+    ]
+},
+{
+    "conversation":[
+        {
+            "system": "xxx",
+            "input": "xxx",
+            "output": "xxx"
+        }
+    ]
+}]
+Step1, read the .jsonL file.
+Step2, count the amount of the "conversation" elements.
+Step3, randomly split all "conversation" elements by 7:3. Targeted structure is same as the input.
+Step4, save the 7/10 part as train.jsonl. save the 3/10 part as test.jsonl
+```
+
+生成 `split2train_and_test.py` 脚本。执行后，生成 `MedQA2019-structured-train.jsonl` 和 `MedQA2019-structured-test.jsonl` 文件。
+
+
+2. 模型下载
+
+同前面微调一样，直接将平台上已有的模型软链接过来即可
+
+```
+ln -s /share/temp/model_repos/internlm-chat-7b .
+```
+
+3. 准备配置文件
+
+```
+# 复制配置文件到当前目录
+xtuner copy-cfg internlm_chat_7b_qlora_oasst1_e3 .
+# 改个文件名
+mv internlm_chat_7b_qlora_oasst1_e3_copy.py internlm_chat_7b_qlora_medqa2019_e3.py
+```
+
+修改配置文件内容如下：
+
+![](../asset/04_11-准备配置文件1.jpg)
+![](../asset/04_12-准备配置文件2.jpg)
+
+4. 开始微调
+
+```
+xtuner train internlm_chat_7b_qlora_medqa2019_e3.py --deepspeed deepspeed_zero2
+```
+
+5. 模型转换测试
+
+```
+mkdir hf
+# 转换为hf模型
+xtuner convert pth_to_hf ./internlm_chat_7b_qlora_medqa2019_e3.py ./work_dirs/internlm_chat_7b_qlora_medqa2019_e3/epoch_3.pth ./hf
+
+# 合并到大语言模型
+xtuner convert merge ./internlm-chat-7b hf merged --max-shard-size 2GB
+
+# 合并后模型对话
+xtuner chat ./merged --prompt-template internlm_chat --bits 4
+```
+
+![](../asset/04_13-自定义模型部署对话.jpg)
+
+模型微调前后对比：
+
+| 微调前                                  | 微调后                                  |
+| --------------------------------------- | --------------------------------------- |
+| ![](../asset/04_14-自定义模型对比1.jpg) | ![](../asset/04_15-自定义模型对比2.jpg) |
+

@@ -85,7 +85,7 @@ python -c "import lmdeploy"
 使用 TurboMind 推理模型需要先将模型转化为 TurboMind 的格式，目前支持在线转换和离线转换两种形式。在线转换可以直接加载 Huggingface 模型，离线转换需需要先保存模型再加载。
 
 
-我们这里采用离线转换：
+在线转换直接读取Huggingface权重，容易受到网络影响。我们这里采用离线转换：
 
 ```
 lmdeploy convert internlm-chat-7b  /root/share/temp/model_repos/internlm-chat-7b/

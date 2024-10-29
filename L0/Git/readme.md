@@ -55,7 +55,7 @@
 
    ```
    git add .
-   git ci -m "add camp4 notes"
+   git ci -m "update camp4 L0 notes"
    git push
    ```
 

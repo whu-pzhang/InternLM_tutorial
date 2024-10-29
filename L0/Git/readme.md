@@ -48,8 +48,16 @@
 ## 任务2：构建个人项目
 
 1. 创建一个 书生大模型实战营的学习笔记项目 `InternLM_Tutorial`
-2. 
 
+![](./git_02.jpg)
+
+2. 更新本次作业，并提交至远程
+
+   ```
+   git add .
+   git ci -m "add camp4 notes"
+   git push
+   ```
 
 
 

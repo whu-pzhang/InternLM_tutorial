@@ -97,7 +97,7 @@ InternLM2.5 会直接回复不知道。
 接下来，我们利用 LlamaxIndex 构建一个简单的 RAG 检索。
 
 1. 找一段 硅基流动 公司的简介文字，存为 `/root/llamaindex_demo/data1/silicon_intro.md` 文件。
-2. 填入一下代码，运行
+2. 填入以下代码，运行
 
 
 ```python
@@ -161,6 +161,138 @@ print(response)
 
 可以看到，加入外挂知识库后，LLM 就可以比较准确的回答出之前不知道的问题了。
 
-### 构建 Huggingface Space 应用
+### 构建 ModelScope Space 应用
+
+1. 登录 [ModelScope](https://www.modelscope.cn/) 创建 创空间 RAG_Demo
+2. 克隆仓库
+
+```bash
+git lfs install
+git clone http://oauth2:GIT_TOKEN@www.modelscope.cn/studios/pzhang199/RAG_Demo.git
+```
+
+3. 构建检索数据 `data/siliconflow_intro.md`
+
+4. 创建 `app.py` 文件，内容如下：
+
+```python
+import streamlit as st
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.legacy.callbacks import CallbackManager
+from llama_index.llms.openai_like import OpenAILike
+
+from modelscope.hub.snapshot_download import snapshot_download
+
+embed_model_name_or_path = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+
+cache_dir = './'
+snapshot_download(embed_model_name_or_path, cache_dir=cache_dir)
+
+# Create an instance of CallbackManager
+callback_manager = CallbackManager()
+
+api_base_url = "https://internlm-chat.intern-ai.org.cn/puyu/api/v1/"
+model = "internlm2.5-latest"
+api_key = "YOUR_API_KEY"
+
+# api_base_url =  "https://api.siliconflow.cn/v1"
+# model = "internlm/internlm2_5-7b-chat"
+# api_key = "请填写 API Key"
+
+llm = OpenAILike(model=model,
+                 api_base=api_base_url,
+                 api_key=api_key,
+                 is_chat_model=True,
+                 callback_manager=callback_manager)
+
+st.set_page_config(page_title="llama_index_demo", page_icon="🦜🔗")
+st.title("llama_index_demo")
+
+
+# 初始化模型
+@st.cache_resource
+def init_models():
+    embed_model = HuggingFaceEmbedding(model_name=embed_model_name_or_path)
+    Settings.embed_model = embed_model
+
+    #用初始化llm
+    Settings.llm = llm
+
+    documents = SimpleDirectoryReader("data").load_data()
+    index = VectorStoreIndex.from_documents(documents)
+    query_engine = index.as_query_engine()
+
+    return query_engine
+
+
+# 检查是否需要初始化模型
+if 'query_engine' not in st.session_state:
+    st.session_state['query_engine'] = init_models()
+
+
+def greet2(question):
+    response = st.session_state['query_engine'].query(question)
+    return response
+
+
+# Store LLM generated responses
+if "messages" not in st.session_state.keys():
+    st.session_state.messages = [{
+        "role": "assistant",
+        "content": "你好，我是你的助手，有什么我可以帮助你的吗？"
+    }]
+
+    # Display or clear chat messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+
+
+def clear_chat_history():
+    st.session_state.messages = [{
+        "role": "assistant",
+        "content": "你好，我是你的助手，有什么我可以帮助你的吗？"
+    }]
+
+
+st.sidebar.button('Clear Chat History', on_click=clear_chat_history)
+
+
+# Function for generating LLaMA2 response
+def generate_llama_index_response(prompt_input):
+    return greet2(prompt_input)
+
+
+# User-provided prompt
+if prompt := st.chat_input():
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+# Gegenerate_llama_index_response last message is not from assistant
+if st.session_state.messages[-1]["role"] != "assistant":
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response = generate_llama_index_response(prompt)
+            placeholder = st.empty()
+            placeholder.markdown(response)
+    message = {"role": "assistant", "content": response}
+    st.session_state.messages.append(message)
+```
+
+4. 上传至空间
+
+```bash
+git add .
+git commit -m "first version"
+git push
+```
+
+5. 上线 
+
+访问 [RAG_Demo](https://www.modelscope.cn/studios/pzhang199/RAG_Demo/) 创空间，设置为公开，点击上线
+
+![](./llamaindex_03.jpg)
 
 
